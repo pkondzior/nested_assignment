@@ -1,6 +1,6 @@
 # NestedAssignment
 module NestedAssignment
-  include RecursionControl
+  include NestedAssignment::RecursionControl
 
   def self.included(base)
     base.class_eval do
@@ -8,7 +8,7 @@ module NestedAssignment
       
       alias_method_chain :create_or_update, :associated
       alias_method_chain :valid?, :associated
-#      alias_method_chain :changed?, :associated
+      #      alias_method_chain :changed?, :associated
     end
   end
 
@@ -17,40 +17,45 @@ module NestedAssignment
     # or even from attr_accessible itself (cool!).
     def accessible_associations(*associations)
       associations.each do |name|
-      
-        # singular associations
-        if [:belongs_to, :has_one].include? self.reflect_on_association(name).macro
-          define_method("#{name}_params=") do |row|
-            assoc = self.send(name)
-            
-            if row[:_delete].to_s == "1"
-              [assoc].detect{|r| r.id == row[:id].to_i}._delete = true if row[:id]
-            else
-              record = row[:id].blank? ? assoc.build : [assoc].detect{|r| r.id == row[:id].to_i}
-              record.attributes = row.except(:id, :_delete)
-            end
-          end
-        # plural collections
-        else
-          define_method("#{name}_params=") do |hash|
-            assoc = self.send(name)
-            
-            hash.values.each do |row|
-              if row[:_delete].to_s == "1"
-                assoc.detect{|r| r.id == row[:id].to_i}._delete = true if row[:id]
+        if association_reflection = self.reflect_on_association(name)
+          self.reflect_on_accessible_associations << association_reflection
+          # singular associations
+          if [:belongs_to, :has_one].include?(association_reflection.macro)
+            define_method("#{name}_params=") do |attributes|
+              if row[:_destroy].to_s == "1" && associated_record = self.send(name)
+                associated_record.destroy
               else
-                record = row[:id].blank? ? assoc.build : assoc.detect{|r| r.id == row[:id].to_i}
-                record.attributes = row.except(:id, :_delete)
+                associated_record = self.send(name) || self.send("build_#{name}")
+                associated_record.attributes = attributes.except(:id, :_destroy)
               end
+            end
+            # plural collections
+          else
+            define_method("#{name}_params=") do |hash|
+
+#              puts hash.inspect
+#              assoc = self.send(name)
+#
+#              hash.values.each do |row|
+#                if row[:_delete].to_s == "1"
+#                  assoc.detect{|r| r.id == row[:id].to_i}._delete = true if row[:id]
+#                else
+#                  record = row[:id].blank? ? assoc.build : assoc.detect{|r| r.id == row[:id].to_i}
+#                  record.attributes = row.except(:id, :_delete)
+#                end
+#              end
             end
           end
         end
-                
       end
     end
   
     def association_names
       @association_names ||= reflect_on_all_associations.map(&:name)
+    end
+
+    def reflect_on_accessible_associations
+      @accessible_associations ||= []
     end
   end
   
@@ -82,7 +87,7 @@ module NestedAssignment
   # the user, we would want to say that the task had changed so we
   # could then recurse and discover that the tag had changed.
   #
-  # Unfortunately, this can also have a 2x performance penalty. 
+  # Unfortunately, this can also have a 2x performance penalty.
   def changed_with_associated?
     without_recursion(:changed) do
       changed_without_associated? or changed_associated
@@ -109,7 +114,7 @@ module NestedAssignment
       ivar = "@#{name}"
       if association = instance_variable_get(ivar)
         if association.target.is_a?(Array)
-          instantiated.concat association.target
+          instantiated.concat(association.target)
         elsif association.target
           instantiated << association.target
         end
@@ -117,5 +122,4 @@ module NestedAssignment
     end
     instantiated
   end
-
 end
