@@ -1,0 +1,3 @@
+rework testcases
+rework nested_assignment.rb for nested_changes and deep_save
+create more documentation and examples
